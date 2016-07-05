@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/docker/docker/pkg/plugins"
 	"github.com/docker/libnetwork/driverapi"
-	"github.com/docker/libnetwork/drivers/overlay/ovmanager"
 	"github.com/docker/libnetwork/drvregistry"
 	"github.com/docker/libnetwork/ipamapi"
 	"github.com/docker/swarmkit/api"
@@ -19,10 +19,6 @@ const (
 	// default if a network without any driver name specified is
 	// created.
 	DefaultDriver = "overlay"
-)
-
-var (
-	defaultDriverInitFunc = ovmanager.Init
 )
 
 // NetworkAllocator acts as the controller for all network related operations
@@ -66,6 +62,11 @@ type network struct {
 	endpoints map[string]string
 }
 
+type initializer struct {
+	fn    drvregistry.InitFunc
+	ntype string
+}
+
 // New returns a new NetworkAllocator handle
 func New() (*NetworkAllocator, error) {
 	na := &NetworkAllocator{
@@ -82,8 +83,7 @@ func New() (*NetworkAllocator, error) {
 		return nil, err
 	}
 
-	// Add the manager component of overlay driver to the registry.
-	if err := reg.AddDriver(DefaultDriver, defaultDriverInitFunc, nil); err != nil {
+	if err := initializeDrivers(reg); err != nil {
 		return nil, err
 	}
 
@@ -622,10 +622,24 @@ func (na *NetworkAllocator) resolveDriver(n *api.Network) (driverapi.Driver, str
 
 	d, _ := na.drvRegistry.Driver(dName)
 	if d == nil {
-		return nil, "", fmt.Errorf("could not resolve network driver %s", dName)
+		var err error
+		err = na.loadDriver(dName)
+		if err != nil {
+			return nil, "", err
+		}
+
+		d, _ = na.drvRegistry.Driver(dName)
+		if d == nil {
+			return nil, "", fmt.Errorf("could not resolve network driver %s", dName)
+		}
 	}
 
 	return d, dName, nil
+}
+
+func (na *NetworkAllocator) loadDriver(name string) error {
+	_, err := plugins.Get(name, driverapi.NetworkPluginEndpointType)
+	return err
 }
 
 // Resolve the IPAM driver
@@ -734,4 +748,13 @@ func (na *NetworkAllocator) allocatePools(n *api.Network) (map[string]string, er
 	}
 
 	return pools, nil
+}
+
+func initializeDrivers(reg *drvregistry.DrvRegistry) error {
+	for _, i := range getInitializers() {
+		if err := reg.AddDriver(i.ntype, i.fn, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
