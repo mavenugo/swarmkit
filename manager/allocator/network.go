@@ -440,6 +440,10 @@ func (a *Allocator) taskCreateNetworkAttachments(t *api.Task, s *api.Service) {
 	// If service is nil or if task network attachments have
 	// already been filled in no need to do anything else.
 	if s == nil || len(t.Networks) != 0 {
+		for _, na := range t.Networks {
+			na.Addresses = nil
+			na.Aliases = nil
+		}
 		return
 	}
 
@@ -487,7 +491,7 @@ func (a *Allocator) doTaskAlloc(ctx context.Context, nc *networkContext, ev even
 	// If the task has stopped running or it's being deleted then
 	// we should free the network resources associated with the
 	// task right away.
-	if taskDead(t) || isDelete {
+	if isDelete {
 		if nc.nwkAllocator.IsTaskAllocated(t) {
 			if err := nc.nwkAllocator.DeallocateTask(t); err != nil {
 				log.G(ctx).Errorf("Failed freeing network resources for task %s: %v", t.ID, err)
@@ -496,6 +500,10 @@ func (a *Allocator) doTaskAlloc(ctx context.Context, nc *networkContext, ev even
 
 		// Cleanup any task references that might exist in unallocatedTasks
 		delete(nc.unallocatedTasks, t.ID)
+		return
+	}
+
+	if taskDead(t) {
 		return
 	}
 
