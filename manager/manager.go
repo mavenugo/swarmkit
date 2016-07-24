@@ -282,6 +282,7 @@ func (m *Manager) Run(parent context.Context) error {
 							},
 							Orchestration: api.OrchestrationConfig{
 								TaskHistoryRetentionLimit: defaultTaskHistoryRetentionLimit,
+								EncryptRoutingMesh:        false,
 							},
 							Dispatcher: api.DispatcherConfig{
 								HeartbeatPeriod: ptypes.DurationProto(dispatcher.DefaultHeartBeatPeriod),

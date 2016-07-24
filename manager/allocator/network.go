@@ -23,7 +23,11 @@ const (
 	ingressSubnet      = "10.255.0.0/16"
 )
 
-func newIngressNetwork() *api.Network {
+func newIngressNetwork(encryptRoutingMesh bool) *api.Network {
+	drvOptions := map[string]string{}
+	if encryptRoutingMesh {
+		drvOptions["encrypted"] = "true"
+	}
 	return &api.Network{
 		Spec: api.NetworkSpec{
 			Annotations: api.Annotations{
@@ -32,7 +36,10 @@ func newIngressNetwork() *api.Network {
 					"com.docker.swarm.internal": "true",
 				},
 			},
-			DriverConfig: &api.Driver{},
+			DriverConfig: &api.Driver{
+				Name:    networkallocator.DefaultDriver,
+				Options: drvOptions,
+			},
 			IPAM: &api.IPAMOptions{
 				Driver: &api.Driver{},
 				Configs: []*api.IPAMConfig{
@@ -73,12 +80,20 @@ func (a *Allocator) doNetworkInit(ctx context.Context) error {
 		return err
 	}
 
+	encryptRoutingMesh := false
+	a.store.View(func(tx store.ReadTx) {
+		clusters, err := store.FindClusters(tx, store.ByName(store.DefaultClusterName))
+		if err == nil && len(clusters) == 1 {
+			encryptRoutingMesh = clusters[0].Spec.Orchestration.EncryptRoutingMesh
+		}
+
+	})
 	nc := &networkContext{
 		nwkAllocator:        na,
 		unallocatedTasks:    make(map[string]*api.Task),
 		unallocatedServices: make(map[string]*api.Service),
 		unallocatedNetworks: make(map[string]*api.Network),
-		ingressNetwork:      newIngressNetwork(),
+		ingressNetwork:      newIngressNetwork(encryptRoutingMesh),
 	}
 
 	// Check if we have the ingress network. If not found create
