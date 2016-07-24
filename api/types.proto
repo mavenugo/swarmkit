@@ -570,6 +570,9 @@ message OrchestrationConfig {
 	// node. If negative, never remove completed or failed tasks.
 	int64 task_history_retention_limit = 1;
 
+	// EnryptRoutingMesh is a config to enable encrypted network traffic on the
+	// routing mesh ingress network
+	bool encrypt_routing_mesh = 2;
 }
 
 // TaskDefaults specifies default values for task creation.
