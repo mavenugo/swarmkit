@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/docker/swarmkit/manager/state/raft"
 	"github.com/docker/swarmkit/manager/state/store"
 	"github.com/docker/swarmkit/protobuf/ptypes"
+	"github.com/docker/swarmkit/xnet"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -141,12 +143,15 @@ func New(config *Config) (*Manager, error) {
 		tcpAddr = net.JoinHostPort("0.0.0.0", tcpAddrPort)
 	}
 
-	err := os.MkdirAll(filepath.Dir(config.ProtoAddr["unix"]), 0700)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create socket directory")
+	// don't create a socket directory if we're on windows. we used named pipe
+	if runtime.GOOS != "windows" {
+		err := os.MkdirAll(filepath.Dir(config.ProtoAddr["unix"]), 0700)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create socket directory")
+		}
 	}
 
-	err = os.MkdirAll(config.StateDir, 0700)
+	err := os.MkdirAll(config.StateDir, 0700)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create state directory")
 	}
@@ -164,7 +169,7 @@ func New(config *Config) (*Manager, error) {
 		listeners = make(map[string]net.Listener)
 
 		for proto, addr := range config.ProtoAddr {
-			l, err := net.Listen(proto, addr)
+			l, err := xnet.Listen(proto, addr)
 
 			// A unix socket may fail to bind if the file already
 			// exists. Try replacing the file.
@@ -177,7 +182,7 @@ func New(config *Config) (*Manager, error) {
 			}
 			if proto == "unix" && unwrappedErr == syscall.EADDRINUSE {
 				os.Remove(addr)
-				l, err = net.Listen(proto, addr)
+				l, err = xnet.Listen(proto, addr)
 				if err != nil {
 					return nil, err
 				}
