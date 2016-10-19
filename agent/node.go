@@ -21,6 +21,7 @@ import (
 	"github.com/docker/swarmkit/log"
 	"github.com/docker/swarmkit/manager"
 	"github.com/docker/swarmkit/remotes"
+	"github.com/docker/swarmkit/xnet"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -529,7 +530,7 @@ func (n *Node) initManagerConnection(ctx context.Context, ready chan<- struct{})
 	addr := n.config.ListenControlAPI
 	opts = append(opts, grpc.WithDialer(
 		func(addr string, timeout time.Duration) (net.Conn, error) {
-			return net.DialTimeout("unix", addr, timeout)
+			return xnet.DialTimeout("unix", addr, timeout)
 		}))
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {

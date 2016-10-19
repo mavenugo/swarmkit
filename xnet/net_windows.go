@@ -19,7 +19,7 @@ func Listen(proto string, addr string) (net.Listener, error) {
 	// so, here, we just use a hack. if the protocol is says unix but we're on
 	// windows, just use a named pipe anyway. problem changed.
 	if proto == "unix" {
-		return winio.ListenPipe(addr, "")
+		return winio.ListenPipe(addr, nil)
 	}
 	return net.Listen(proto, addr)
 }
