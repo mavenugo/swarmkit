@@ -313,8 +313,26 @@ func (na *NetworkAllocator) IsServiceAllocated(s *api.Service) bool {
 	return true
 }
 
-// IsNodeAllocated returns if the passed node has its network resources allocated or not.
 func (na *NetworkAllocator) IsNodeAllocated(node *api.Node) bool {
+	if node == nil {
+		return false
+	}
+	return isAttachmentAllocated(node, node.Attachment)
+}
+
+func (na *NetworkAllocator) IsLBAttachmentAllocated(node *api.Node, nid string) bool {
+	if node == nil {
+		return false
+	}
+
+	if lb, ok := node.LBAttachment[nid]; ok {
+		return isAttachmentAllocated(node, lb)
+	}
+	return false
+}
+
+// IsNodeAllocated returns if the passed node has its network resources allocated or not.
+func (na *NetworkAllocator) isAttachmentAllocated(node *api.Node, attachment *api.NetworkAttachment) bool {
 	// If the node is not found in the allocated set, then it is
 	// not allocated.
 	if _, ok := na.nodes[node.ID]; !ok {
@@ -322,23 +340,23 @@ func (na *NetworkAllocator) IsNodeAllocated(node *api.Node) bool {
 	}
 
 	// If no attachment, not allocated.
-	if node.Attachment == nil {
+	if attachment == nil {
 		return false
 	}
 
 	// If the network is not allocated, the node cannot be allocated.
-	localNet, ok := na.networks[node.Attachment.Network.ID]
+	localNet, ok := na.networks[attachment.Network.ID]
 	if !ok {
 		return false
 	}
 
 	// Addresses empty, not allocated.
-	if len(node.Attachment.Addresses) == 0 {
+	if len(attachment.Addresses) == 0 {
 		return false
 	}
 
 	// The allocated IP address not found in local endpoint state. Not allocated.
-	if _, ok := localNet.endpoints[node.Attachment.Addresses[0]]; !ok {
+	if _, ok := localNet.endpoints[attachment.Addresses[0]]; !ok {
 		return false
 	}
 
@@ -385,6 +403,30 @@ func (na *NetworkAllocator) AllocateTask(t *api.Task) error {
 func (na *NetworkAllocator) DeallocateTask(t *api.Task) error {
 	delete(na.tasks, t.ID)
 	return na.releaseEndpoints(t.Networks)
+}
+
+// AllocateLBAttachment allocates the IP addresses for a LB in a network
+// on a given node
+func (na *NetworkAllocator) AllocateLBAttachment(node *api.Node, nid string) error {
+	lbAttachment, ok := node.LBAttachments[nid]
+	if !ok {
+		return errors.Wrapf(err, "failed to get LBAttachment for network %s", nid)
+	}
+	if err := na.allocateNetworkIPs(lbAttachment); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeallocateNode deallocates the IP addresses for the network to
+// which the node is attached.
+func (na *NetworkAllocator) DeallocateLBAttachment(node *api.Node, nid string) error {
+	lbAttachment, ok := node.LBAttachments[nid]
+	if !ok {
+		return errors.Wrapf(err, "failed to get LBAttachment during deallocation for network %s", nid)
+	}
+	return na.releaseEndpoints([]*api.NetworkAttachment{lbAttachment})
 }
 
 func (na *NetworkAllocator) releaseEndpoints(networks []*api.NetworkAttachment) error {

@@ -181,45 +181,6 @@ func (a *Allocator) doNetworkInit(ctx context.Context) (err error) {
 		log.G(ctx).WithError(err).Error("failed committing allocation of networks during init")
 	}
 
-	// Allocate nodes in the store so far before we process watched events.
-	var nodes []*api.Node
-	a.store.View(func(tx store.ReadTx) {
-		nodes, err = store.FindNodes(tx, store.All)
-	})
-	if err != nil {
-		return errors.Wrap(err, "error listing all nodes in store while trying to allocate during init")
-	}
-
-	var allocatedNodes []*api.Node
-	for _, node := range nodes {
-		if na.IsNodeAllocated(node) {
-			continue
-		}
-
-		if node.Attachment == nil {
-			node.Attachment = &api.NetworkAttachment{}
-		}
-
-		node.Attachment.Network = nc.ingressNetwork.Copy()
-		if err := a.allocateNode(ctx, node); err != nil {
-			log.G(ctx).WithError(err).Errorf("Failed to allocate network resources for node %s during init", node.ID)
-			continue
-		}
-
-		allocatedNodes = append(allocatedNodes, node)
-	}
-
-	if _, err := a.store.Batch(func(batch *store.Batch) error {
-		for _, node := range allocatedNodes {
-			if err := a.commitAllocatedNode(ctx, batch, node); err != nil {
-				log.G(ctx).WithError(err).Errorf("Failed to commit allocation of network resources for node %s during init", node.ID)
-			}
-		}
-		return nil
-	}); err != nil {
-		log.G(ctx).WithError(err).Error("Failed to commit allocation of network resources for nodes during init")
-	}
-
 	// Allocate services in the store so far before we process watched events.
 	var services []*api.Service
 	a.store.View(func(tx store.ReadTx) {
@@ -318,6 +279,47 @@ func (a *Allocator) doNetworkInit(ctx context.Context) (err error) {
 	}
 
 	return nil
+}
+
+func (a *Allocator) allocateNetworkResourceForAllNodes() error {
+	// Allocate nodes in the store so far before we process watched events.
+	var nodes []*api.Node
+	a.store.View(func(tx store.ReadTx) {
+		nodes, err = store.FindNodes(tx, store.All)
+	})
+	if err != nil {
+		return errors.Wrap(err, "error listing all nodes in store while trying to allocate during init")
+	}
+	var allocatedNodes []*api.Node
+	for _, node := range nodes {
+		if na.IsNodeAllocated(node) {
+			continue
+		}
+
+		if node.Attachment == nil {
+			node.Attachment = &api.NetworkAttachment{}
+		}
+
+		node.Attachment.Network = nc.ingressNetwork.Copy()
+		if err := a.allocateNode(ctx, node); err != nil {
+			log.G(ctx).WithError(err).Errorf("Failed to allocate network resources for node %s during init", node.ID)
+			continue
+		}
+
+		allocatedNodes = append(allocatedNodes, node)
+	}
+
+	if _, err := a.store.Batch(func(batch *store.Batch) error {
+		for _, node := range allocatedNodes {
+			if err := a.commitAllocatedNode(ctx, batch, node); err != nil {
+				log.G(ctx).WithError(err).Errorf("Failed to commit allocation of network resources for node %s during init", node.ID)
+			}
+		}
+		return nil
+	}); err != nil {
+		log.G(ctx).WithError(err).Error("Failed to commit allocation of network resources for nodes during init")
+	}
+
 }
 
 func (a *Allocator) doNetworkAlloc(ctx context.Context, ev events.Event) {
